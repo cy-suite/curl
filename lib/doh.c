@@ -75,6 +75,23 @@ static const char *doh_strerror(DOHcode code)
 
 #endif /* !CURL_DISABLE_VERBOSE_STRINGS */
 
+static void doh_meta_probe_dtor(const struct meta_key *key, void *value)
+{
+  struct doh_request *doh_req = value;
+  (void)key;
+  if(doh_req) {
+    curl_slist_free_all(doh_req->req_hds);
+    Curl_dyn_free(&doh_req->resp_body);
+    free(doh_req);
+  }
+}
+
+#define CURL_EZM_DOH_PROBE   "ezm:doh-p"
+static const struct meta_key doh_meta_key_probe =
+  CURL_META_KEY_PTR("meta:doh:probe", doh_meta_probe_dtor);
+#define CURL_META_DOH_PROBE  (&doh_meta_key_probe)
+
+
 /* @unittest 1655
  */
 UNITTEST DOHcode doh_req_encode(const char *host,
@@ -179,7 +196,7 @@ doh_probe_write_cb(char *contents, size_t size, size_t nmemb, void *userp)
 {
   size_t realsize = size * nmemb;
   struct Curl_easy *data = userp;
-  struct doh_request *doh_req = Curl_meta_get(data, CURL_EZM_DOH_PROBE);
+  struct doh_request *doh_req = Curl_meta_get(data, CURL_META_DOH_PROBE);
   if(!doh_req)
     return CURL_WRITEFUNC_ERROR;
 
@@ -223,7 +240,7 @@ static void doh_probe_done(struct Curl_easy *data,
   struct doh_probes *dohp = data->state.async.doh;
   DEBUGASSERT(dohp);
   if(dohp) {
-    struct doh_request *doh_req = Curl_meta_get(doh, CURL_EZM_DOH_PROBE);
+    struct doh_request *doh_req = Curl_meta_get(doh, CURL_META_DOH_PROBE);
     int i;
 
     for(i = 0; i < DOH_SLOT_COUNT; ++i) {
@@ -249,7 +266,7 @@ static void doh_probe_done(struct Curl_easy *data,
                                Curl_dyn_len(&doh_req->resp_body));
         Curl_dyn_free(&doh_req->resp_body);
       }
-      Curl_meta_remove(doh, CURL_EZM_DOH_PROBE);
+      Curl_meta_remove(doh, CURL_META_DOH_PROBE);
     }
 
     if(result)
@@ -259,18 +276,6 @@ static void doh_probe_done(struct Curl_easy *data,
       /* DoH completed, run the transfer picking up the results */
       Curl_expire(data, 0, EXPIRE_RUN_NOW);
     }
-  }
-}
-
-static void doh_probe_dtor(void *key, size_t klen, void *e)
-{
-  (void)key;
-  (void)klen;
-  if(e) {
-    struct doh_request *doh_req = e;
-    curl_slist_free_all(doh_req->req_hds);
-    Curl_dyn_free(&doh_req->resp_body);
-    free(e);
   }
 }
 
@@ -431,11 +436,10 @@ static CURLcode doh_probe_run(struct Curl_easy *data,
   doh->state.internal = TRUE;
   doh->master_mid = data->mid; /* master transfer of this one */
 
-  if(Curl_meta_set(doh, CURL_EZM_DOH_PROBE, doh_req, doh_probe_dtor)) {
-    result = CURLE_OUT_OF_MEMORY;
+  result = Curl_meta_set(doh, CURL_META_DOH_PROBE, doh_req);
+  doh_req = NULL; /* call has taken ownership */
+  if(result)
     goto error;
-  }
-  doh_req = NULL;
 
   /* DoH handles must not inherit private_data. The handles may be passed to
      the user via callbacks and the user will be able to identify them as
@@ -452,7 +456,7 @@ static CURLcode doh_probe_run(struct Curl_easy *data,
 error:
   Curl_close(&doh);
   if(doh_req)
-    doh_probe_dtor(NULL, 0, doh_req);
+    doh_meta_probe_dtor(CURL_META_DOH_PROBE, doh_req);
   return result;
 }
 

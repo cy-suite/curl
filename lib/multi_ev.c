@@ -32,6 +32,7 @@
 #include "curl_trc.h"
 #include "multiif.h"
 #include "timeval.h"
+#include "meta-hash.h"
 #include "multi_ev.h"
 #include "select.h"
 #include "uint-bset.h"
@@ -46,12 +47,20 @@
 #include "memdebug.h"
 
 
+static void mev_meta_pollset_dtor(const struct meta_key *key, void *value)
+{
+  (void)key;
+  free(value);
+}
+
+static const struct meta_key mev_meta_key_pollset =
+  CURL_META_KEY_PTR("meta:mev:ps", mev_meta_pollset_dtor);
+#define CURL_META_MEV_POLLSET  (&mev_meta_key_pollset)
+
 static void mev_in_callback(struct Curl_multi *multi, bool value)
 {
   multi->in_callback = value;
 }
-
-#define CURL_MEV_CONN_HASH_SIZE 3
 
 /* Information about a socket for which we inform the libcurl application
  * what to supervise (CURL_POLL_IN/CURL_POLL_OUT/CURL_POLL_REMOVE)
@@ -438,13 +447,6 @@ static CURLMcode mev_pollset_diff(struct Curl_multi *multi,
   return CURLM_OK;
 }
 
-static void mev_pollset_dtor(void *key, size_t klen, void *entry)
-{
-  (void)key;
-  (void)klen;
-  free(entry);
-}
-
 static struct easy_pollset*
 mev_add_new_conn_pollset(struct connectdata *conn)
 {
@@ -453,7 +455,7 @@ mev_add_new_conn_pollset(struct connectdata *conn)
   ps = calloc(1, sizeof(*ps));
   if(!ps)
     return NULL;
-  if(Curl_conn_meta_set(conn, CURL_META_MEV_POLLSET, ps, mev_pollset_dtor)) {
+  if(Curl_conn_meta_set(conn, CURL_META_MEV_POLLSET, ps)) {
     free(ps);
     return NULL;
   }
@@ -468,10 +470,8 @@ mev_add_new_xfer_pollset(struct Curl_easy *data)
   ps = calloc(1, sizeof(*ps));
   if(!ps)
     return NULL;
-  if(Curl_meta_set(data, CURL_META_MEV_POLLSET, ps, mev_pollset_dtor)) {
-    free(ps);
+  if(Curl_meta_set(data, CURL_META_MEV_POLLSET, ps))
     return NULL;
-  }
   return ps;
 }
 
