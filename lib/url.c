@@ -3465,7 +3465,6 @@ static CURLcode create_conn(struct Curl_easy *data,
     data->asi->used = TRUE;
 #endif
   result = parse_connect_to_slist(data, conn, data->set.connect_to);
-
   if(result)
     goto out;
 
@@ -3768,6 +3767,7 @@ CURLcode Curl_setup_conn(struct Curl_easy *data,
 
   Curl_pgrsTime(data, TIMER_NAMELOOKUP);
 
+
   if(conn->handler->flags & PROTOPT_NONETWORK) {
     /* nothing to setup when not using a network */
     *protocol_done = TRUE;
@@ -3812,7 +3812,6 @@ CURLcode Curl_connect(struct Curl_easy *data,
   }
 
   if(result == CURLE_NO_CONNECTION_AVAILABLE) {
-
     return result;
   }
   else if(result && conn) {
